@@ -60,28 +60,36 @@ def update_database(dataframe):
 
     # Iterate through the dataframe and update the database
     for index, row in dataframe.iterrows():
-        username = row['Username']
-        user_ID = row['Discord ID']
-        Active = bool(row['ACTIVE'])
+        try:
+            username = row['Username']
+            user_ID = row['Discord ID']
+            Active = bool(row['ACTIVE'])
 
-        if user_ID in existing_data_dict:
-            # Check for changes
-            existing_row = existing_data_dict[user_ID]
-            if existing_row[0] != username or existing_row[4] != Active:
-                # Update the existing record
+            print(f"Processing row: Username={username}, User_ID={user_ID}, Active={Active}")
+
+            if user_ID in existing_data_dict:
+                # Check for changes
+                existing_row = existing_data_dict[user_ID]
+                if existing_row[0] != username or existing_row[4] != Active:
+                    # Update the existing record
+                    cur.execute('''
+                        UPDATE users 
+                        SET username = ?, Active = ? 
+                        WHERE user_ID = ?
+                    ''', (username, Active, user_ID))
+                    changes.append((username, user_ID, 'Updated'))
+                    print(f"Updated: Username={username}, User_ID={user_ID}")
+            else:
+                # Insert new record with default values for channel_ID and Open
                 cur.execute('''
-                    UPDATE users 
-                    SET username = ?, Active = ? 
-                    WHERE user_ID = ?
-                ''', (username, Active, user_ID))
-                changes.append((username, user_ID, 'Updated'))
-        else:
-            # Insert new record with default values for channel_ID and Open
-            cur.execute('''
-                INSERT INTO users (username, user_ID, channel_ID, Open, Active)
-                VALUES (?, ?, NULL, FALSE, ?)
-            ''', (username, user_ID, Active))
-            changes.append((username, user_ID, 'Inserted'))
+                    INSERT INTO users (username, user_ID, channel_ID, Open, Active)
+                    VALUES (?, ?, NULL, FALSE, ?)
+                ''', (username, user_ID, Active))
+                changes.append((username, user_ID, 'Inserted'))
+                print(f"Inserted: Username={username}, User_ID={user_ID}")
+
+        except Exception as e:
+            print(f"Error processing row: {row}, Error: {e}")
 
     # Fetch users with Active = True and channel_ID = Null
     cur.execute('SELECT username, user_ID FROM users WHERE Active = 1 AND channel_ID IS NULL')
@@ -92,6 +100,7 @@ def update_database(dataframe):
     conn.close()
 
     return users_to_update, changes
+
 
 def update_channel_id(user_ID, channel_id):
     conn = sqlite3.connect('example.db')
