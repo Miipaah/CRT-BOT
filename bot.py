@@ -101,7 +101,6 @@ def update_database(dataframe):
 
     return users_to_update, changes
 
-
 def update_channel_id(user_ID, channel_id):
     conn = sqlite3.connect('example.db')
     cur = conn.cursor()
@@ -185,6 +184,13 @@ async def on_message(message):
                         await channel.send(embed=embed, file=file)
                 else:
                     await channel.send(embed=embed)
+        else:
+            # Send a response to non-database users or users without a channel ID
+            embed = discord.Embed(
+                description="We don't currently have you listed as a Scheduled streamer in the Discord for this Charity Raid Train. If you need assistance from the Admin team or another staff member, please use the various staff chat channels available in the main Discord.",
+                color=0xff0000  # Red color
+            )
+            await message.author.send(embed=embed)
 
     elif message.channel.id in [ch_id[0] for ch_id in get_all_channels()]:
         # Message is in a channel associated with a user
@@ -210,7 +216,7 @@ async def on_message(message):
                 await user.send(embed=embed)
 
 @bot.command(name='close')
-@commands.has_role('Staff')  # Require the 'Staff' role
+@commands.has_role('staff')  # Require the 'staff' role
 async def close(ctx):
     channel_id = ctx.channel.id
     user_id = get_user_id(channel_id)
@@ -222,69 +228,58 @@ async def close(ctx):
             await ctx.channel.edit(category=category)
             set_channel_open(user_id, False)
 
-            # Notify the user
-            embed = discord.Embed(
-                description=f"{ctx.author.display_name} has closed this conversation. To open again, please send a DM.",
-                color=0xff0000
-            )
-            await user.send(embed=embed)
-            await ctx.send("Channel has been closed and user notified.")
+            await user.send("Your ticket has been closed by staff.")
 
-@bot.command(name='dm')
-@commands.has_role('Staff')  # Require the 'Staff' role
-async def dm(ctx, *, args: str):
-    mentions = ctx.message.mentions
-    message_content = args.replace(' '.join([mention.mention for mention in mentions]), '').strip()
-
-    if mentions:
-        for user in mentions:
-            try:
-                await user.send(message_content)
-                await ctx.send(f"Message sent to {user.display_name}.")
-            except discord.Forbidden:
-                await ctx.send(f"Cannot send message to {user.display_name}.")
-    else:
-        await ctx.send("You need to mention at least one user.")
-
-@bot.command(name='dmall')
-@commands.has_role('Staff')  # Require the 'Staff' role
-async def dmall(ctx, *, message: str):
-    guild = bot.get_guild(GUILD_ID)
-    if guild:
-        for member in guild.members:
-            if not member.bot:
-                try:
-                    await member.send(message)
-                except discord.Forbidden:
-                    await ctx.send(f"Cannot send message to {member.display_name}.")
-        await ctx.send("Message sent to all members.")
-    else:
-        await ctx.send("Guild not found.")
+    await ctx.send("This channel has been closed.")
 
 @bot.command(name='sync')
-@commands.has_role('Staff')  # Require the 'Staff' role
+@commands.has_role('staff')  # Require the 'staff' role
 async def sync(ctx):
-    await ctx.send('Syncing database...')
     users_to_update, changes = sync_database()
 
-    if not users_to_update and not changes:
-        await ctx.send('Database is already up-to-date.')
-        return
+    # Create a message with the changes
+    if changes:
+        changes_msg = '\n'.join([f"{change[2]}: Username={change[0]}, User_ID={change[1]}" for change in changes])
+        await ctx.send(f"Database synced. Changes made:\n{changes_msg}")
+    else:
+        await ctx.send("Database synced. No changes were necessary.")
 
-    # Create channels for users who are active and have no channel_ID
-    category = bot.get_channel(CLOSED_CATEGORY_ID)
-    if category is None:
-        await ctx.send('Closed category not found.')
-        return
+    # Update channel ID for users with Active = 1 and channel_ID = NULL
+    for username, user_id in users_to_update:
+        guild = bot.get_guild(GUILD_ID)
+        member = guild.get_member(user_id)
+        if member:
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(read_messages=False),
+                member: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+                guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+            }
+            category = bot.get_channel(CLOSED_CATEGORY_ID)
+            channel = await guild.create_text_channel(name=f"ticket-{username}", category=category, overwrites=overwrites)
+            update_channel_id(user_id, channel.id)
 
-    for username, user_ID in users_to_update:
-        channel = await category.create_text_channel(name=username)
-        update_channel_id(user_ID, channel.id)
-        await ctx.send(f'Created channel {channel.name} for user {username}.')
+@bot.command(name='dmall')
+@commands.has_role('staff')  # Require the 'staff' role
+async def dmall(ctx, *, message: str):
+    conn = sqlite3.connect('example.db')
+    cur = conn.cursor()
+    
+    # Fetch all users with a channel ID
+    cur.execute('SELECT user_ID FROM users WHERE channel_ID IS NOT NULL')
+    users = cur.fetchall()
+    conn.close()
 
-    await ctx.send('Database synced successfully! Changes made:')
-    for change in changes:
-        await ctx.send(f'User: {change[0]}, Discord ID: {change[1]}, Change: {change[2]}')
+    if users:
+        for user_id in users:
+            user = bot.get_user(user_id[0])
+            if user:
+                try:
+                    await user.send(message)
+                except discord.Forbidden:
+                    await ctx.send(f"Cannot send message to {user.display_name}.")
+        await ctx.send("Message sent to all users with a channel ID.")
+    else:
+        await ctx.send("No users found with a channel ID.")
 
 # Error handling
 @bot.event
