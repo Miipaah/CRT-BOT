@@ -13,31 +13,12 @@ load_dotenv()
 CLOSED_CATEGORY_ID = int(os.getenv('CLOSED_CATEGORY_ID'))
 OPEN_CATEGORY_ID = int(os.getenv('OPEN_CATEGORY_ID'))
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-GUILD_ID = int(os.getenv('GUILD_ID'))
+GUILD_ID = int(os.getenv('GUILD_ID')) # replace with your actual Guild ID
 
 # Initialize the bot
 intents = discord.Intents.all()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
-
-# Function to create the users table if it doesn't exist
-def create_table():
-    conn = sqlite3.connect('example.db')
-    cur = conn.cursor()
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            username TEXT DEFAULT NULL,
-            user_ID INTEGER DEFAULT NULL,
-            channel_ID INTEGER DEFAULT NULL,
-            Open BOOLEAN DEFAULT FALSE,
-            Active BOOLEAN DEFAULT NULL
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-# Create the users table
-create_table()
 
 # Database functions
 def fetch_data_from_google_sheets_csv(url):
@@ -220,7 +201,7 @@ async def on_message(message):
                 await user.send(embed=embed)
 
 @bot.command(name='close')
-@commands.has_permissions(administrator=True)
+@commands.has_role('Staff')  # Require the 'Staff' role
 async def close(ctx):
     channel_id = ctx.channel.id
     user_id = get_user_id(channel_id)
@@ -241,7 +222,7 @@ async def close(ctx):
             await ctx.send("Channel has been closed and user notified.")
 
 @bot.command(name='dm')
-@commands.has_permissions(administrator=True)
+@commands.has_role('Staff')  # Require the 'Staff' role
 async def dm(ctx, *, args: str):
     mentions = ctx.message.mentions
     message_content = args.replace(' '.join([mention.mention for mention in mentions]), '').strip()
@@ -257,7 +238,7 @@ async def dm(ctx, *, args: str):
         await ctx.send("You need to mention at least one user.")
 
 @bot.command(name='dmall')
-@commands.has_permissions(administrator=True)
+@commands.has_role('Staff')  # Require the 'Staff' role
 async def dmall(ctx, *, message: str):
     guild = bot.get_guild(GUILD_ID)
     if guild:
@@ -271,12 +252,8 @@ async def dmall(ctx, *, message: str):
     else:
         await ctx.send("Guild not found.")
 
-@bot.event
-async def on_ready():
-    print(f'Bot is ready. Logged in as {bot.user}')
-
 @bot.command(name='sync')
-@commands.has_permissions(administrator=True)
+@commands.has_role('Staff')  # Require the 'Staff' role
 async def sync(ctx):
     await ctx.send('Syncing database...')
     users_to_update, changes = sync_database()
@@ -300,5 +277,12 @@ async def sync(ctx):
     for change in changes:
         await ctx.send(f'User: {change[0]}, Discord ID: {change[1]}, Change: {change[2]}')
 
-# Run the bot with your token
+# Error handling
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.MissingRole):
+        await ctx.send("You do not have the required role to use this command.")
+    else:
+        raise error
+
 bot.run(BOT_TOKEN)
