@@ -13,12 +13,31 @@ load_dotenv()
 CLOSED_CATEGORY_ID = int(os.getenv('CLOSED_CATEGORY_ID'))
 OPEN_CATEGORY_ID = int(os.getenv('OPEN_CATEGORY_ID'))
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-GUILD_ID = int(os.getenv('GUILD_ID')) # replace with your actual Guild ID
+GUILD_ID = int(os.getenv('GUILD_ID'))
 
 # Initialize the bot
 intents = discord.Intents.all()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
+
+# Function to create the users table if it doesn't exist
+def create_table():
+    conn = sqlite3.connect('example.db')
+    cur = conn.cursor()
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT DEFAULT NULL,
+            user_ID INTEGER DEFAULT NULL,
+            channel_ID INTEGER DEFAULT NULL,
+            Open BOOLEAN DEFAULT FALSE,
+            Active BOOLEAN DEFAULT NULL
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+# Create the users table
+create_table()
 
 # Database functions
 def fetch_data_from_google_sheets_csv(url):
@@ -139,6 +158,7 @@ def get_all_channels():
     result = cur.fetchall()
     conn.close()
     return result
+
 # DM Relay functionality
 @bot.event
 async def on_message(message):
